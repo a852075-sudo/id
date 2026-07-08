@@ -1895,6 +1895,39 @@ ${dataSummaryContext}
           });
         }
 
+        // 修改後的動態監聽邏輯：專門針對 entryDialog 彈窗打開時，鎖定特定欄位
+        const dialogObserver = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.attributeName === "open") {
+              if (entryDialog.open) {
+                const roomId = entryForm.dataset.roomId;
+                // 鎖定特定攝影室：ct1 (1F CT), ct3 (3F CT), rct (RCT)
+                if (["ct1", "ct3", "rct"].includes(roomId)) {
+                  // 取得 Visipague 的 補充（visipague:inQty）和 結存（visipague:balanceQty）欄位
+                  const visipagueIn = entryForm.querySelector('input[name="visipague:inQty"]');
+                  const visipagueBalance = entryForm.querySelector('input[name="visipague:balanceQty"]');
+
+                  if (visipagueIn) {
+                    visipagueIn.value = "X";
+                    // 為了美觀與防呆，同時套用 readonly 與對應背景灰底樣式
+                    visipagueIn.readOnly = true;
+                    visipagueIn.classList.add("bg-slate-100", "text-slate-400", "cursor-not-allowed");
+                  }
+
+                  if (visipagueBalance) {
+                    visipagueBalance.value = "X";
+                    visipagueBalance.readOnly = true;
+                    visipagueBalance.classList.add("bg-slate-100", "text-slate-400", "cursor-not-allowed");
+                  }
+                }
+              }
+            }
+          });
+        });
+        
+        // 啟動對 dialog open 屬性的監控
+        dialogObserver.observe(entryDialog, { attributes: true });
+
         function renderRoom(target, room) {
           target.append(renderTimeline({
             year: state.year,
