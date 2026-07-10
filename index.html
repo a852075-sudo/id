@@ -251,6 +251,10 @@
         grid-template-columns: repeat(3, 1fr);
       }
 
+      .flex-1-item {
+        flex: 1;
+      }
+
       .app-card {
         background-color: var(--bg-surface);
         border: 1px solid var(--border-color);
@@ -770,6 +774,9 @@
         <button id="settingsBtn" class="icon-btn" type="button" aria-label="設定">
           <span class="material-symbols-rounded">settings</span>
         </button>
+        <button id="logoutBtn" class="icon-btn" type="button" aria-label="登出">
+          <span class="material-symbols-rounded">logout</span>
+        </button>
       </header>
 
       <main id="viewRoot" class="view-root" tabindex="-1"></main>
@@ -841,19 +848,19 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script type="module">
-      // 宣告系統科室與相應品項 (已將 Visipague320 修正為 Visipague)
+      // 宣告系統科室與相應品項 (已將 Visipague320 修正為 Visipague，新增各 MRI 攝影室之 MRI注射器)
       export const ROOMS = [
         { id: "ct1", name: "1F CT", sheetName: "Sheet A", icon: "contrast", accent: "#2563eb", items: ["Omnipaque", "Visipague", "高壓注射器針筒"] },
         { id: "ct3", name: "3F CT", sheetName: "Sheet B", icon: "scanner", accent: "#0891b2", items: ["Omnipaque", "Visipague", "高壓注射器針筒"] },
         { id: "rct", name: "RCT", sheetName: "Sheet C", icon: "monitor_heart", accent: "#7c3aed", items: ["Omnipaque", "Ultravist370", "Visipague", "高壓注射器針筒"] },
-        { id: "mri1", name: "1F MRI", sheetName: "Sheet D", icon: "magnet", accent: "#0f766e", items: ["Gadolinium", "Eovist", "生理食鹽水"] },
-        { id: "mri3", name: "3F MRI", sheetName: "Sheet E", icon: "view_in_ar", accent: "#16a34a", items: ["Gadolinium", "Eovist", "生理食鹽水"] },
-        { id: "mri3t", name: "3T MRI", sheetName: "Sheet F", icon: "sensors", accent: "#ca8a04", items: ["Gadolinium", "Primovist", "生理食鹽水"] },
+        { id: "mri1", name: "1F MRI", sheetName: "Sheet D", icon: "magnet", accent: "#0f766e", items: ["Gadolinium", "Eovist", "生理食鹽水", "MRI注射器"] },
+        { id: "mri3", name: "3F MRI", sheetName: "Sheet E", icon: "view_in_ar", accent: "#16a34a", items: ["Gadolinium", "Eovist", "生理食鹽水", "MRI注射器"] },
+        { id: "mri3t", name: "3T MRI", sheetName: "Sheet F", icon: "sensors", accent: "#ca8a04", items: ["Gadolinium", "Primovist", "生理食鹽水", "MRI注射器"] },
         { id: "special", name: "特殊", sheetName: "Sheet G", icon: "biotech", accent: "#db2777", items: ["Ultravist300", "Ultravist370", "Barium", "Omnipaque"] },
         { id: "vascular", name: "血管", sheetName: "Sheet H", icon: "bloodtype", accent: "#dc2626", items: ["Omnipaque", "Ultravist370", "Visipague", "高壓注射器針筒"] },
         { id: "ivp", name: "IVP", sheetName: "Sheet I", icon: "science", accent: "#9333ea", items: ["Ultravist300"] },
         { id: "summary", name: "總盤點彙整", sheetName: "Summary", icon: "inventory_2", accent: "#4f46e5", type: "summary", items: [] },
-        { id: "syringe", name: "高壓注射器針筒", sheetName: "Sheet J", icon: "vaccines", accent: "#0d9488", type: "syringe", items: ["高壓注射器針筒", "延長管", "三通閥"] },
+        { id: "syringe", name: "高壓注射器針筒", sheetName: "Sheet J", icon: "vaccines", accent: "#0d9488", type: "syringe", items: ["高壓注射器針筒", "延長管", "三通閥", "MRI注射器"] },
         { id: "ai_copilot", name: "AI 智慧臨床助理", sheetName: "AICopilot", icon: "psychology", accent: "#f97316", type: "ai_copilot", items: [] }
       ];
 
@@ -989,7 +996,8 @@
           wasteQty: Number(entry.wasteQty || 0),
           note: entry.note || "",
           touched: entry.touched || null,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          user: sessionStorage.getItem("radiology_user") || "" // 同步儲存當前操作的使用者帳號
         };
         const index = entries.findIndex((row) =>
           row.id === next.id ||
@@ -1134,6 +1142,7 @@
         return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
       }
 
+      // 強固型 Trim 欄位分析，徹底移除前後空白所引起的比對錯誤
       function normalizeItemName(value) {
         return String(value || "").trim().toLowerCase();
       }
@@ -1172,39 +1181,75 @@
         return entries;
       }
 
-      export async function syncEntry(entry) {
+      /**
+       * 新增：合併多筆盤點資料為單一結構發送（優化傳輸效能、杜絕重疊提交的競態條件與多餘行寫入）
+       * 1. 確保同一天同一間攝影室的所有數據被整合成一列傳輸。
+       * 2. 「帳號名稱」放置在整體欄位結構的最後一個。
+       */
+      export async function syncEntries(entries) {
+        if (!entries || entries.length === 0) return { offline: true };
         const settings = loadSettings();
         if (!settings.apiUrl) return { offline: true };
+
+        const firstEntry = entries[0];
+        const roomId = firstEntry.roomId;
+        const sheetName = settings.sheets[roomId];
+
+        // 建立整合型欄位，以「日期」作為起頭首欄
+        const combinedFields = {
+          "日期": normalizeDateKey(firstEntry.date)
+        };
+
+        // 整合當日各子項目備註 (去重合併)
+        const notes = entries.map(e => e.note).filter(Boolean);
+        if (notes.length > 0) {
+          combinedFields["備註"] = [...new Set(notes)].join("；");
+        }
+
+        // 依據各 entry 品項動態合併資料
+        entries.forEach(entry => {
+          const room = roomById(entry.roomId);
+          const prefix = `${room.name} ${entry.item}`;
+          const touched = entry.touched || {};
+
+          if (touched.peopleQty || (!entry.touched && Number(entry.peopleQty || 0))) {
+            combinedFields[`${prefix} 人數`] = Number(entry.peopleQty || 0);
+          }
+          if (touched.inQty || (!entry.touched && Number(entry.inQty || 0))) {
+            const inLabel = String(entry.item || "").includes("補充") ? "補充數" : "補充";
+            combinedFields[`${prefix} ${inLabel}`] = Number(entry.inQty || 0);
+          }
+          if (touched.balanceQty || (!entry.touched && Number(entry.balanceQty || 0))) {
+            combinedFields[`${prefix} 結存`] = Number(entry.balanceQty || 0);
+          }
+          if (touched.usedQty || (!entry.touched && Number(entry.usedQty || 0))) {
+            combinedFields[`${prefix} 用量`] = Number(entry.usedQty || 0);
+          }
+        });
+
+        // 醫事人員帳號：保證作為資料結構的「最後一個欄位」追加寫入
+        const currentUser = sessionStorage.getItem("radiology_user") || "";
+        combinedFields["帳號名稱"] = currentUser;
+
+        // 向 GAS 發送單次請求，實現完美原子化寫入
         const response = await fetch(settings.apiUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "upsertDaily",
-            sheet: settings.sheets[entry.roomId],
-            row: entry,
-            fields: buildDailyFields(entry)
+            sheet: sheetName,
+            row: firstEntry, // 傳遞首筆資料作為 metadata
+            fields: combinedFields
           })
         });
+
         if (!response.ok) throw new Error(`Google Sheets 寫入失敗：${response.status}`);
         return response.json();
       }
 
-      function buildDailyFields(entry) {
-        const room = roomById(entry.roomId);
-        const prefix = `${room.name} ${entry.item}`;
-        const touched = entry.touched || {};
-        const fields = {
-          "日期": normalizeDateKey(entry.date)
-        };
-        if (touched.note || entry.note) fields["備註"] = entry.note || "";
-        if (touched.peopleQty || (!entry.touched && Number(entry.peopleQty || 0))) fields[`${prefix} 人數`] = Number(entry.peopleQty || 0);
-        if (touched.inQty || (!entry.touched && Number(entry.inQty || 0))) {
-          const inLabel = String(entry.item || "").includes("補充") ? "補充數" : "補充";
-          fields[`${prefix} ${inLabel}`] = Number(entry.inQty || 0);
-        }
-        if (touched.balanceQty || (!entry.touched && Number(entry.balanceQty || 0))) fields[`${prefix} 結存`] = Number(entry.balanceQty || 0);
-        if (touched.usedQty || (!entry.touched && Number(entry.usedQty || 0))) fields[`${prefix} 用量`] = Number(entry.usedQty || 0);
-        return fields;
+      // 相容舊有單筆同步結構
+      export async function syncEntry(entry) {
+        return syncEntries([entry]);
       }
 
       function normalizeSheetRows(roomId, rows) {
@@ -1270,7 +1315,6 @@
         return `${year}-${month}-${day}`;
       }
 
-      // 強固型 Trim 欄位分析，徹底移除前後空白所引起的比對錯誤
       function parseDailyHeader(header, roomName) {
         const trimmedHeader = String(header || "").trim();
         const trimmedRoom = String(roomName || "").trim();
@@ -1604,6 +1648,12 @@ ${summaryData.map(d => `- ${d.name}: 使用人數 ${d.people}人, 本月消耗 $
 - 1F CT 攝影室消耗: ${syringeMetrics.ct1} 支
 - 全院注射器總計: ${syringeMetrics.total} 支
 
+【MRI注射器針筒消耗】：
+- 1F MRI 攝影室消耗: ${syringeMetrics.mri1} 支
+- 3F MRI 攝影室消耗: ${syringeMetrics.mri3} 支
+- 3T MRI 攝影室消耗: ${syringeMetrics.mri3t} 支
+- MRI注射器總計: ${syringeMetrics.mriTotal} 支
+
 【系統狀態設定】：
 - 期初庫存設定：${JSON.stringify(settings.initialStocks)}
           `;
@@ -1657,7 +1707,7 @@ ${summaryData.map(d => `- ${d.name}: 使用人數 ${d.people}人, 本月消耗 $
                 <div id="aiChatOutput" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm scrollbar-thin">
                   <div class="bg-white border border-slate-100 rounded-lg p-3 text-slate-700 shadow-sm leading-relaxed max-w-[85%]">
                     您好！我是放射科 Gemini 智慧決策助理。我已加載了 <strong>${state.year} 年 ${state.month} 月</strong> 的盤點數據與科室耗用紀錄。
-                    您可以直接點擊上方的<b>診斷工具捷徑</b>，或在下方輸入任何關於庫存、臨床規範或分析建議的問題！
+                    您可以直接點擊上方的<b>診斷工具捷徑</b>，或在下方輸入任何關於庫存、臨床規範 or 分析建議的問題！
                   </div>
                 </div>
                 
@@ -1688,7 +1738,7 @@ ${summaryData.map(d => `- ${d.name}: 使用人數 ${d.people}人, 本月消耗 $
                     AI 語音簡報中心 (TTS)
                   </h3>
                   <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">
-                    本系統支援 Gemini TTS 技術，可直接將分析成果轉化為流暢中文口白，方便您進行走動式庫存管理與語音交班。
+                    本系統支援 Gemini TTS 技術，可直接將 analysis 成果轉化為流暢中文口白，方便您進行走動式庫存管理與語音交班。
                   </p>
                   
                   <div id="aiAudioStatus" class="p-3 bg-white border border-slate-200 rounded-lg flex flex-col gap-2 shadow-sm text-xs text-slate-600">
@@ -1883,11 +1933,11 @@ ${dataSummaryContext}
           });
 
           aiContainer.querySelector("#aiBtnTrend").addEventListener("click", () => {
-            handleSendMessage("請針對本月全院各個對比劑與高壓針筒的期末庫存與消耗趨勢，進行『庫存趨勢與安全水位預警分析』，並幫我診斷是否有異常消耗或未完成盤點天數？");
+            handleSendMessage("請針對本月全院各個對比劑與高壓針筒（包含MRI注射器）的期末庫存與消耗趨勢，進行『庫存趨勢與安全水位預警分析』，並幫我診斷是否有異常消耗或未完成盤點天數？");
           });
 
           aiContainer.querySelector("#aiBtnOrder").addEventListener("click", () => {
-            handleSendMessage("請幫我評估本月各攝影室對比劑與針筒的使用速度，並以庫存管理角度提供一份精準的『申領與下期採購備貨安全水位建議報告』。");
+            handleSendMessage("請幫我評估本月各攝影室對比劑與針筒（包含MRI注射器）的使用速度，並以庫存管理角度提供一份精準的『申領與下期採購備貨安全水位建議報告』。");
           });
 
           aiContainer.querySelector("#aiBtnWarning").addEventListener("click", () => {
@@ -1895,21 +1945,17 @@ ${dataSummaryContext}
           });
         }
 
-        // 修改後的動態監聽邏輯：專門針對 entryDialog 彈窗打開時，鎖定特定欄位
         const dialogObserver = new MutationObserver((mutations) => {
           mutations.forEach((mutation) => {
             if (mutation.attributeName === "open") {
               if (entryDialog.open) {
                 const roomId = entryForm.dataset.roomId;
-                // 鎖定特定攝影室：ct1 (1F CT), ct3 (3F CT), rct (RCT)
                 if (["ct1", "ct3", "rct"].includes(roomId)) {
-                  // 取得 Visipague 的 補充（visipague:inQty）和 結存（visipague:balanceQty）欄位
                   const visipagueIn = entryForm.querySelector('input[name="visipague:inQty"]');
                   const visipagueBalance = entryForm.querySelector('input[name="visipague:balanceQty"]');
 
                   if (visipagueIn) {
                     visipagueIn.value = "X";
-                    // 為了美觀與防呆，同時套用 readonly 與對應背景灰底樣式
                     visipagueIn.readOnly = true;
                     visipagueIn.classList.add("bg-slate-100", "text-slate-400", "cursor-not-allowed");
                   }
@@ -1925,7 +1971,6 @@ ${dataSummaryContext}
           });
         });
         
-        // 啟動對 dialog open 屬性的監控
         dialogObserver.observe(entryDialog, { attributes: true });
 
         function renderRoom(target, room) {
@@ -1980,7 +2025,7 @@ ${dataSummaryContext}
 
         function renderReferenceRoomTable(room, config) {
           const rows = calculateDailyRows(room.id, state.year, state.month);
-          const table = tableShell(`${room.name} 攝影室 每日盤點與明細登記`, "新增當日登記");
+          const table = tableShell(`${room.name} 每日盤點與明細登記`, "新增當日登記");
           table.classList.add("reference-panel");
           table.querySelector("[data-add]").addEventListener("click", () => openEntryDialog(room, isoDate(state.year, state.month, new Date().getDate())));
           table.querySelector("thead").innerHTML = `
@@ -2098,6 +2143,11 @@ ${dataSummaryContext}
               <div class="syringe-stat-card"><span>3F CT 攝影室消耗</span><strong>${metrics.ct3} 支</strong></div>
               <div class="syringe-stat-card"><span>1F CT 攝影室消耗</span><strong>${metrics.ct1} 支</strong></div>
               <div class="syringe-stat-card total"><span>高壓注射器針筒全院總計</span><strong>${metrics.total} 支</strong></div>
+              
+              <div class="syringe-stat-card"><span>1F MRI 攝影室消耗</span><strong>${metrics.mri1} 支</strong></div>
+              <div class="syringe-stat-card"><span>3F MRI 攝影室消耗</span><strong>${metrics.mri3} 支</strong></div>
+              <div class="syringe-stat-card"><span>3T MRI 攝影室消耗</span><strong>${metrics.mri3t} 支</strong></div>
+              <div class="syringe-stat-card total"><span>MRI注射器針筒全院總計</span><strong>${metrics.mriTotal} 支</strong></div>
             </div>
           `);
           panel.querySelector("[data-print-syringe]").addEventListener("click", () => window.print());
@@ -2129,11 +2179,15 @@ ${dataSummaryContext}
           entryDialog.close();
           render();
           try {
-            const results = await Promise.allSettled(savedEntries.map((entry) => syncEntry(entry)));
-            const failed = results.filter((result) => result.status === "rejected").length;
-            toast(failed ? `已儲存 ${savedEntries.length} 筆，${failed} 筆待同步` : `已儲存並同步 ${savedEntries.length} 筆`);
+            // 改為呼叫優化後的單一原子化 syncEntries 方法
+            const result = await syncEntries(savedEntries);
+            if (result && result.offline) {
+              toast(`已本機儲存 ${savedEntries.length} 筆，目前為離線模式`);
+            } else {
+              toast(`已儲存並成功同步 ${savedEntries.length} 筆資料至試算表`);
+            }
           } catch (error) {
-            toast(`已本機儲存，同步待重試：${error.message}`);
+            toast(`已本機儲存，同步失敗：${error.message}`);
           }
         });
 
@@ -2270,11 +2324,15 @@ ${dataSummaryContext}
           { recordedAt: new Date().toISOString(), month, room: "RCT", usedQty: metrics.rct },
           { recordedAt: new Date().toISOString(), month, room: "3F CT", usedQty: metrics.ct3 },
           { recordedAt: new Date().toISOString(), month, room: "1F CT", usedQty: metrics.ct1 },
-          { recordedAt: new Date().toISOString(), month, room: "高壓注射器針筒全院總計", usedQty: metrics.total }
+          { recordedAt: new Date().toISOString(), month, room: "高壓注射器針筒全院總計", usedQty: metrics.total },
+          { recordedAt: new Date().toISOString(), month, room: "1F MRI", usedQty: metrics.mri1 },
+          { recordedAt: new Date().toISOString(), month, room: "3F MRI", usedQty: metrics.mri3 },
+          { recordedAt: new Date().toISOString(), month, room: "3T MRI", usedQty: metrics.mri3t },
+          { recordedAt: new Date().toISOString(), month, room: "MRI注射器針筒全院總計", usedQty: metrics.mriTotal }
         ];
         try {
           await appendReportRows({ sheet: settings.sheets.syringe || "Sheet J", headers, rows });
-          toast(`已追加儲存 ${month} 高壓注射器針筒月紀錄`);
+          toast(`已追加儲存 ${month} 針筒與MRI注射器月紀錄`);
         } catch (error) {
           toast(error.message);
         }
@@ -2445,21 +2503,24 @@ ${dataSummaryContext}
           groups: [
             referenceGroup("gadovist", "Gadovist", ["Gadovist", "Gadolinium"], ["people", "in", "balance", "used"]),
             referenceGroup("dotarem", "Dotarem", ["Dotarem"], ["people", "in", "balance", "used"]),
-            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"])
+            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"]),
+            referenceGroup("mriInjector", "MRI注射器", ["MRI注射器", "mri_injector"], ["dose"])
           ]
         },
         mri3: {
           groups: [
             referenceGroup("gadovist", "Gadovist", ["Gadovist", "Gadolinium"], ["people", "in", "balance", "used"]),
             referenceGroup("dotarem", "Dotarem", ["Dotarem"], ["people", "in", "balance", "used"]),
-            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"])
+            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"]),
+            referenceGroup("mriInjector", "MRI注射器", ["MRI注射器", "mri_injector"], ["dose"])
           ]
         },
         mri3t: {
           groups: [
             referenceGroup("gadovist", "Gadovist", ["Gadovist", "Gadolinium"], ["people", "in", "balance", "used"]),
             referenceGroup("dotarem", "Dotarem", ["Dotarem"], ["people", "in", "balance", "used"]),
-            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"])
+            referenceGroup("primovist", "Primovist", ["Primovist", "Eovist"], ["people"]),
+            referenceGroup("mriInjector", "MRI注射器", ["MRI注射器", "mri_injector"], ["dose"])
           ]
         },
         special: {
@@ -2479,7 +2540,7 @@ ${dataSummaryContext}
         },
         ivp: {
           groups: [
-            referenceGroup("ultravist300", "Ultravist 300", ["Ultravist300", "Ultravist 300"], ["people", "in", "balance", "used"])
+            referenceGroup("ultravist300", "Ultravist 300", ["Contrast 300", "Ultravist300", "Ultravist 300"], ["people", "in", "balance", "used"])
           ]
         }
       };
@@ -2511,6 +2572,7 @@ ${dataSummaryContext}
         }[column] || column;
       }
 
+      // 用於區分高壓針筒用量的特殊高亮樣式
       function columnClass(column) {
         return column === "used" ? "usage-head" : "";
       }
@@ -2560,17 +2622,31 @@ ${dataSummaryContext}
         });
       }
 
-      function buildSyringeMetrics(year, month) {
+      export function buildSyringeMetrics(year, month) {
         const targetRooms = ["rct", "ct3", "ct1"];
         const values = Object.fromEntries(targetRooms.map((roomId) => {
           const entries = filterEntriesByAliases(entriesFor(roomId, year, month), ["高壓注射器針筒", "注射器", "針筒", "高壓針筒"]);
           return [roomId, sumEntries(entries, "usedQty")];
         }));
+
+        const mriRooms = ["mri1", "mri3", "mri3t"];
+        const mriValues = Object.fromEntries(mriRooms.map((roomId) => {
+          const entries = filterEntriesByAliases(entriesFor(roomId, year, month), ["MRI注射器", "mri_injector"]);
+          return [roomId, sumEntries(entries, "usedQty")];
+        }));
+
+        const syringeTotal = (values.rct || 0) + (values.ct3 || 0) + (values.ct1 || 0);
+        const mriTotal = (mriValues.mri1 || 0) + (mriValues.mri3 || 0) + (mriValues.mri3t || 0);
+
         return {
           rct: values.rct || 0,
           ct3: values.ct3 || 0,
           ct1: values.ct1 || 0,
-          total: (values.rct || 0) + (values.ct3 || 0) + (values.ct1 || 0)
+          total: syringeTotal,
+          mri1: mriValues.mri1 || 0,
+          mri3: mriValues.mri3 || 0,
+          mri3t: mriValues.mri3t || 0,
+          mriTotal: mriTotal
         };
       }
 
@@ -2714,6 +2790,27 @@ ${dataSummaryContext}
           ui.syncCurrentRoom();
         });
 
+        // 定義登出按鈕事件監聽器，重設驗證 Session 並返回登入 overlay
+        document.querySelector("#logoutBtn").addEventListener("click", () => {
+          sessionStorage.removeItem("radiology_auth");
+          sessionStorage.removeItem("radiology_user");
+          
+          document.querySelector("#username").value = "";
+          document.querySelector("#password").value = "";
+          
+          const loginError = document.querySelector("#loginError");
+          if (loginError) loginError.classList.add("hidden");
+
+          const loginOverlay = document.querySelector("#loginOverlay");
+          const appContainer = document.querySelector("#app");
+          
+          if (loginOverlay) loginOverlay.classList.remove("hidden");
+          if (appContainer) appContainer.classList.add("hidden");
+          
+          state.roomId = null;
+          toast("已安全登出系統");
+        });
+
         // 定義登入成功後的初始化邏輯
         function startApp() {
           ui.render();
@@ -2781,27 +2878,33 @@ ${dataSummaryContext}
         const loginError = document.querySelector("#loginError");
         const appContainer = document.querySelector("#app");
 
+        // 綁定登入提交處理器 (無條件綁定，確保登出後仍可再次正常登入)
+        loginForm.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const user = document.querySelector("#username").value.trim();
+          const pass = document.querySelector("#password").value.trim();
+
+          if (AUTH_USERS[user] && AUTH_USERS[user] === pass) {
+            sessionStorage.setItem("radiology_auth", "true");
+            sessionStorage.setItem("radiology_user", user); // 儲存帳號名稱以利後續同步寫入
+            loginOverlay.classList.add("hidden");
+            appContainer.classList.remove("hidden");
+            startApp();
+          } else {
+            loginError.classList.remove("hidden");
+            document.querySelector("#password").value = "";
+            document.querySelector("#password").focus();
+          }
+        });
+
+        // 初始狀態檢測 (使用 classList 切換而非直接 remove 元素，確保登出時能重新渲染)
         if (sessionStorage.getItem("radiology_auth") === "true") {
-          loginOverlay.remove();
+          loginOverlay.classList.add("hidden");
           appContainer.classList.remove("hidden");
           startApp();
         } else {
-          loginForm.addEventListener("submit", (e) => {
-            e.preventDefault();
-            const user = document.querySelector("#username").value.trim();
-            const pass = document.querySelector("#password").value.trim();
-
-            if (AUTH_USERS[user] && AUTH_USERS[user] === pass) {
-              sessionStorage.setItem("radiology_auth", "true");
-              loginOverlay.remove();
-              appContainer.classList.remove("hidden");
-              startApp();
-            } else {
-              loginError.classList.remove("hidden");
-              document.querySelector("#password").value = "";
-              document.querySelector("#password").focus();
-            }
-          });
+          loginOverlay.classList.remove("hidden");
+          appContainer.classList.add("hidden");
         }
       });
     </script>
