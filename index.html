@@ -727,13 +727,16 @@
     </style>
   </head>
   <body>
+    <!-- 入口安全驗證介面 Overlay (預設顯示) -->
     <div id="loginOverlay" class="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-100 p-4 transition-all duration-300">
       <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <!-- 驗證標題區 -->
         <div class="bg-gradient-to-r from-blue-600 to-blue-800 p-6 text-white text-center">
           <span class="material-symbols-rounded text-5xl mb-2">admin_panel_settings</span>
           <h2 class="text-xl font-bold tracking-wide">放射科盤點系統驗證</h2>
           <p class="text-xs opacity-85 mt-1.5">請輸入醫事人員帳號與密碼以連入系統</p>
         </div>
+        <!-- 驗證表單區 -->
         <form id="loginForm" class="p-6 space-y-4">
           <div id="loginError" class="hidden text-sm bg-red-50 text-red-600 p-3 rounded-lg flex items-center gap-2 border border-red-200">
             <span class="material-symbols-rounded text-lg">error</span>
@@ -755,6 +758,7 @@
       </div>
     </div>
 
+    <!-- 主應用程式主體 (登入成功前預設隱藏) -->
     <div id="app" class="app-shell hidden">
       <header class="top-app-bar">
         <button id="backBtn" class="icon-btn is-hidden" type="button" aria-label="返回首頁">
@@ -778,6 +782,7 @@
       <main id="viewRoot" class="view-root" tabindex="-1"></main>
     </div>
 
+    <!-- 盤點項目編輯 Dialog -->
     <dialog id="entryDialog" class="app-dialog">
       <form id="entryForm" method="dialog">
         <div class="dialog-head">
@@ -786,7 +791,9 @@
             <span class="material-symbols-rounded">close</span>
           </button>
         </div>
-        <div class="form-grid"></div>
+        <div class="form-grid">
+          <!-- 動態生成之表單欄位 -->
+        </div>
         <div class="dialog-actions">
           <button class="text-btn" value="cancel" type="button" data-close-dialog>取消</button>
           <button class="filled-btn" value="default" type="submit">儲存</button>
@@ -824,22 +831,6 @@
           <p class="helper">此設定將套用至「聽取語音簡報」功能。Gemini TTS 支援多語系，本系統已內建中文優化。</p>
         </section>
         <section class="settings-section">
-          <h3>手機與瀏覽器通知設定 (Web Notifications)</h3>
-          <div class="flex flex-col gap-3">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-slate-700">未完成盤點每日提醒</span>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="notificationToggle" class="sr-only peer">
-                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-            <p class="helper">當偵測到目前月份有攝影室「未完成盤點」時，會在登入或開啟系統時，自動發送推播通知至您的手機或電腦。</p>
-            <button type="button" id="testNotificationBtn" class="tonal-btn mt-2 justify-center w-full md:w-auto self-start">
-              <span class="material-symbols-rounded">notifications_active</span>測試發送推播通知
-            </button>
-          </div>
-        </section>
-        <section class="settings-section">
           <h3>月初期初庫存</h3>
           <div id="initialStockInputs" class="settings-list"></div>
         </section>
@@ -857,6 +848,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script type="module">
+      // 宣告系統科室與相應品項 (已將 Visipague320 修正為 Visipague，新增各 MRI 攝影室之 MRI注射器)
       export const ROOMS = [
         { id: "ct1", name: "1F CT", sheetName: "Sheet A", icon: "contrast", accent: "#2563eb", items: ["Omnipaque", "Visipague", "高壓注射器針筒"] },
         { id: "ct3", name: "3F CT", sheetName: "Sheet B", icon: "scanner", accent: "#0891b2", items: ["Omnipaque", "Visipague", "高壓注射器針筒"] },
@@ -872,19 +864,23 @@
         { id: "ai_copilot", name: "AI 智慧臨床助理", sheetName: "AICopilot", icon: "psychology", accent: "#f97316", type: "ai_copilot", items: [] }
       ];
 
+      // 預設期初設定與基本狀態 (已更新 GAS API 為新網址，期初 Visipague 欄位正常對接)
       export const DEFAULT_SETTINGS = {
         apiUrl: "https://script.google.com/macros/s/AKfycbw4qhN0C3RzBDwmLsYiEsxFUW_y5yQla_viqPa4aaKCRz-Ef53vAA5KCir4yIVThp9QCQ/exec",
         aiVoice: "Charon",
-        enableNotifications: false,
         sheets: Object.fromEntries(ROOMS.map((room) => [room.id, room.sheetName])),
         initialStocks: {
-          "ct1:omni": 54,
-          "ct1:visipague": 0,
-          "ct3:omni": 50,
-          "ct3:visipague": 0,
           "rct:omni": 26,
           "rct:ultravist370": 32,
-          "rct:visipague": 0,
+          "ct3:omni": 50,
+          "ct1:omni": 54,
+          "vascular:omni": 10,
+          "vascular:ultravist370": 9,
+          "special:omni": 2,
+          "special:ultravist300": 5,
+          "special:ultravist370": 8,
+          "special:barium": 17,
+          "ivp:ultravist300": 17,
           "mri1:gadovist": 16,
           "mri1:dotarem": 11,
           "mri1:primovist": 0,
@@ -894,15 +890,10 @@
           "mri3t:gadovist": 16,
           "mri3t:dotarem": 12,
           "mri3t:primovist": 0,
-          "special:omni": 2,
-          "special:ultravist300": 5,
-          "special:barium": 17,
-          "special:ultravist370": 8,
-          "vascular:omni": 10,
-          "vascular:ultravist370": 9,
-          "vascular:visipague": 0,
-          "ivp:ultravist300": 17,
-          "mri1:ultravist300": 17
+          "ct1:visipague": 0,
+          "ct3:visipague": 0,
+          "rct:visipague": 0,
+          "vascular:visipague": 0
         }
       };
 
@@ -921,7 +912,6 @@
             ...parsed,
             apiUrl: parsed.apiUrl || DEFAULT_SETTINGS.apiUrl,
             aiVoice: parsed.aiVoice || DEFAULT_SETTINGS.aiVoice,
-            enableNotifications: parsed.enableNotifications ?? DEFAULT_SETTINGS.enableNotifications,
             sheets: { ...DEFAULT_SETTINGS.sheets, ...(parsed.sheets || {}) },
             initialStocks: normalizeInitialStocks(parsed.initialStocks || {})
           };
@@ -1006,7 +996,7 @@
           note: entry.note || "",
           touched: entry.touched || null,
           updatedAt: new Date().toISOString(),
-          user: sessionStorage.getItem("radiology_user") || ""
+          user: sessionStorage.getItem("radiology_user") || "" // 同步儲存當前操作的使用者帳號
         };
         const index = entries.findIndex((row) =>
           row.id === next.id ||
@@ -1128,39 +1118,12 @@
 
       export function resolveOpeningStock(roomId, year, month) {
         const settings = loadSettings();
-        
-        // 取得該攝影室所有品項期初庫存之總和作為基準
-        const getSumOpening = (y, m) => {
-          let sumVal = 0;
-          const config = REFERENCE_TABLES[roomId];
-          if (config) {
-            config.groups.forEach((group) => {
-              sumVal += resolveGroupOpeningStock(roomId, group, y, m);
-            });
-          } else {
-            sumVal = Number(settings.initialStocks[roomId] || 0);
-          }
-          return sumVal;
-        };
-
-        // 基準月為 2026.07。若查詢基準月或更早，直接回傳預設的期初庫存設定
-        if (year < 2026 || (year === 2026 && month <= 7)) {
-          return getSumOpening(2026, 7);
+        let opening = Number(settings.initialStocks[roomId] || 0);
+        for (let currentMonth = 1; currentMonth < month; currentMonth += 1) {
+          const previousRows = calculateDailyRowsWithoutCarry(roomId, year, currentMonth, opening);
+          opening = previousRows.at(-1)?.balance ?? opening;
         }
-
-        const { year: previousYear, month: previousMonth } = previousMonthOf(year, month);
-        let balance = resolveOpeningStock(roomId, previousYear, previousMonth);
-        
-        const previousMonthEntries = entriesFor(roomId, previousYear, previousMonth);
-        if (!previousMonthEntries.length) return balance;
-
-        for (let day = 1; day <= daysInMonth(previousYear, previousMonth); day += 1) {
-          const date = isoDate(previousYear, previousMonth, day);
-          const dayEntries = previousMonthEntries.filter((entry) => entry.date === date);
-          if (!dayEntries.length) continue;
-          balance = balance + sum(dayEntries, "inQty") - sum(dayEntries, "usedQty") - sum(dayEntries, "wasteQty");
-        }
-        return balance;
+        return opening;
       }
 
       function calculateDailyRowsWithoutCarry(roomId, year, month, opening) {
@@ -1178,72 +1141,9 @@
         return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
       }
 
+      // 強固型 Trim 欄位分析，徹底移除前後空白所引起的比對錯誤
       function normalizeItemName(value) {
         return String(value || "").trim().toLowerCase();
-      }
-
-      export async function requestNotificationPermission() {
-        if (!("Notification" in window)) {
-          toast("⚠️ 您的手機或瀏覽器不支援 Web Notification 通知功能");
-          return false;
-        }
-        if (Notification.permission === "granted") return true;
-        const permission = await Notification.requestPermission();
-        return permission === "granted";
-      }
-
-      export function sendLocalNotification(title, body) {
-        if (!("Notification" in window) || Notification.permission !== "granted") return;
-        try {
-          new Notification(title, {
-            body: body,
-            icon: "https://placehold.co/128x128/2563eb/ffffff?text=放射盤點",
-            badge: "https://placehold.co/128x128/2563eb/ffffff?text=放射盤點",
-            vibrate: [200, 100, 200]
-          });
-        } catch (e) {
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.ready.then(registration => {
-              registration.showNotification(title, {
-                body: body,
-                icon: "https://placehold.co/128x128/2563eb/ffffff?text=放射盤點",
-                badge: "https://placehold.co/128x128/2563eb/ffffff?text=放射盤點",
-                vibrate: [200, 100, 200]
-              });
-            });
-          }
-        }
-      }
-
-      export function checkAndTriggerIncompleteAlert() {
-        const settings = loadSettings();
-        if (!settings.enableNotifications) return;
-        if (Notification.permission !== "granted") return;
-
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth() + 1;
-        const rooms = operationalRooms();
-        const uncompletedList = [];
-
-        rooms.forEach(room => {
-          const alertInfo = calculateAlert(room.id, year, month, today);
-          if (!alertInfo.complete && alertInfo.missingCount > 0) {
-            uncompletedList.push({
-              name: room.name,
-              missingCount: alertInfo.missingCount,
-              missingDays: alertInfo.missingDays
-            });
-          }
-        });
-
-        if (uncompletedList.length > 0) {
-          const title = "⚠️ 放射盤點未完成警告";
-          const body = uncompletedList
-            .map(item => `${item.name}：缺 ${item.missingCount} 天 (日期: ${item.missingDays.slice(0, 5).join(", ")}日${item.missingDays.length > 5 ? "..." : ""})`)
-            .join("\n");
-          sendLocalNotification(title, body);
-        }
       }
 
       export async function fetchRoomEntries(roomId) {
@@ -1280,6 +1180,11 @@
         return entries;
       }
 
+      /**
+       * 新增：合併多筆盤點資料為單一結構發送（優化傳輸效能、杜絕重疊提交的競態條件與多餘行寫入）
+       * 1. 確保同一天同一間攝影室的所有數據被整合成一列傳輸。
+       * 2. 「帳號名稱」放置在整體欄位結構的最後一個。
+       */
       export async function syncEntries(entries) {
         if (!entries || entries.length === 0) return { offline: true };
         const settings = loadSettings();
@@ -1289,15 +1194,18 @@
         const roomId = firstEntry.roomId;
         const sheetName = settings.sheets[roomId];
 
+        // 建立整合型欄位，以「日期」作為起頭首欄
         const combinedFields = {
           "日期": normalizeDateKey(firstEntry.date)
         };
 
+        // 整合當日各子項目備註 (去重合併)
         const notes = entries.map(e => e.note).filter(Boolean);
         if (notes.length > 0) {
           combinedFields["備註"] = [...new Set(notes)].join("；");
         }
 
+        // 依據各 entry 品項動態合併資料
         entries.forEach(entry => {
           const room = roomById(entry.roomId);
           const prefix = `${room.name} ${entry.item}`;
@@ -1318,16 +1226,18 @@
           }
         });
 
+        // 醫事人員帳號：保證作為資料結構的「最後一個欄位」追加寫入
         const currentUser = sessionStorage.getItem("radiology_user") || "";
         combinedFields["帳號名稱"] = currentUser;
 
+        // 向 GAS 發送單次請求，實現完美原子化寫入
         const response = await fetch(settings.apiUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "upsertDaily",
             sheet: sheetName,
-            row: firstEntry,
+            row: firstEntry, // 傳遞首筆資料作為 metadata
             fields: combinedFields
           })
         });
@@ -1336,6 +1246,7 @@
         return response.json();
       }
 
+      // 相容舊有單筆同步結構
       export async function syncEntry(entry) {
         return syncEntries([entry]);
       }
@@ -1345,7 +1256,7 @@
         const sourceRows = rows.some((row) => row.item || row.品項) ? rows : mergeRowsByDate(rows);
         return sourceRows.flatMap((row, rowIndex) => {
           if (row.item || row.品項) return [row];
-          const date = normalizeDateKey(row["官方日期"] || row["日期"] || row.date);
+          const date = normalizeDateKey(row["日期"] || row.date);
           if (!date) return [];
           const grouped = new Map();
           Object.entries(row).forEach(([header, value]) => {
@@ -1811,7 +1722,7 @@ ${summaryData.map(d => `- ${d.name}: 使用人數 ${d.people}人, 本月消耗 $
                     </button>
                   </div>
                   <div class="flex gap-2">
-                    <input type="text" id="aiChatInput" placeholder="輸入問題..." class="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
+                    <input type="text" id="aiChatInput" placeholder="輸入問題（例如：幫我分析哪些品項有短缺危機？或者 Primovist 的適應症與注射速度）..." class="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500">
                     <button type="button" id="aiSendBtn" class="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg flex items-center gap-1 text-sm transition">
                       發送
                     </button>
@@ -2267,6 +2178,7 @@ ${dataSummaryContext}
           entryDialog.close();
           render();
           try {
+            // 改為呼叫優化後的單一原子化 syncEntries 方法
             const result = await syncEntries(savedEntries);
             if (result && result.offline) {
               toast(`已本機儲存 ${savedEntries.length} 筆，目前為離線模式`);
@@ -2286,12 +2198,6 @@ ${dataSummaryContext}
           const settings = loadSettings();
           document.querySelector("#apiUrlInput").value = settings.apiUrl;
           document.querySelector("#aiVoiceSelect").value = settings.aiVoice;
-          
-          const notifToggle = document.querySelector("#notificationToggle");
-          if (notifToggle) {
-            notifToggle.checked = !!settings.enableNotifications;
-          }
-
           document.querySelector("#initialStockInputs").innerHTML = stockSettingItems().map((item) => `
             <div class="settings-row">
               <strong>${item.label}</strong>
@@ -2313,10 +2219,6 @@ ${dataSummaryContext}
           const settings = loadSettings();
           settings.apiUrl = data.get("apiUrl") || "";
           settings.aiVoice = data.get("aiVoice") || "Charon";
-          
-          const notifToggle = document.querySelector("#notificationToggle");
-          settings.enableNotifications = notifToggle ? notifToggle.checked : false;
-
           for (const [key, value] of data.entries()) {
             if (key.startsWith("stock:")) settings.initialStocks[key.replace("stock:", "")] = Number(value || 0);
             if (key.startsWith("sheet:")) settings.sheets[key.replace("sheet:", "")] = value || "";
@@ -2547,33 +2449,21 @@ ${dataSummaryContext}
       function resolveGroupOpeningStock(roomId, group, year, month) {
         const settings = loadSettings();
         const defaultStock = getInitialStock(settings, roomId, group.key);
-        
-        // 基準月為 2026.07。若在基準月或更早，回傳預設的 2026.07 期初數據
         if (year < 2026 || (year === 2026 && month <= 7)) return defaultStock;
 
         const { year: previousYear, month: previousMonth } = previousMonthOf(year, month);
-        
-        // 遞迴取得上個月的期初庫存
-        let balance = resolveGroupOpeningStock(roomId, group, previousYear, previousMonth);
-        
-        // 撈取上個月的所有歷史交易紀錄
         const previousMonthEntries = entriesFor(roomId, previousYear, previousMonth)
           .filter((entry) => matchesItem(entry.item, group.aliases));
-          
-        // 如果上個月完全沒有交易紀錄，則本月期初結存即等於上個月期初庫存，避免重設回初始預設值
-        if (!previousMonthEntries.length) return balance;
+        if (!previousMonthEntries.length) return defaultStock;
 
-        // 連續累加計算出上個月最後一日的結存數據
+        let balance = resolveGroupOpeningStock(roomId, group, previousYear, previousMonth);
         for (let day = 1; day <= daysInMonth(previousYear, previousMonth); day += 1) {
           const date = isoDate(previousYear, previousMonth, day);
           const dayEntries = previousMonthEntries.filter((entry) => entry.date === date);
           if (!dayEntries.length) continue;
-          
           const totals = itemTotals(dayEntries, ...group.aliases);
-          const hasRecordedBalance = group.columns.includes("balance");
-          
-          balance = hasRecordedBalance
-            ? sumItemEntries(dayEntries, group.aliases, "balanceQty")
+          balance = group.columns.includes("balance")
+            ? sumEntries(dayEntries, "balanceQty")
             : balance + totals.inQty - totals.usedQty - totals.wasteQty;
         }
         return balance;
@@ -2681,6 +2571,7 @@ ${dataSummaryContext}
         }[column] || column;
       }
 
+      // 用於區分高壓針筒用量的特殊高亮樣式
       function columnClass(column) {
         return column === "used" ? "usage-head" : "";
       }
@@ -2793,7 +2684,7 @@ ${dataSummaryContext}
               .forEach((group) => {
                 const rows = calculateDailyRows(room.id, year, month);
                 const settings = loadSettings();
-                let balance = resolveGroupOpeningStock(room.id, group, year, month);
+                let balance = getInitialStock(settings, room.id, group.key);
                 rows.forEach((row) => {
                   const totals = itemTotals(row.entries, ...group.aliases);
                   peopleQty += totals.peopleQty;
@@ -2885,37 +2776,6 @@ ${dataSummaryContext}
 
         const ui = createUI(state, actions);
 
-        const testBtn = document.querySelector("#testNotificationBtn");
-        if (testBtn) {
-          testBtn.addEventListener("click", async () => {
-            const granted = await requestNotificationPermission();
-            if (granted) {
-              sendLocalNotification(
-                "放射科智慧盤點系統 - 測試成功 🔔",
-                "推播提醒功能已順利開啟！未來當系統偵測到未完成盤點的地點及日期時，將自動發送提醒通知。"
-              );
-              toast("🔔 測試推播通知已發送，請查看手機通知中心！");
-            } else {
-              toast("❌ 權限請求被拒絕，請前往手機瀏覽器設定中手動啟用。");
-            }
-          });
-        }
-
-        const notifToggle = document.querySelector("#notificationToggle");
-        if (notifToggle) {
-          notifToggle.addEventListener("change", async () => {
-            if (notifToggle.checked) {
-              const granted = await requestNotificationPermission();
-              if (!granted) {
-                notifToggle.checked = false;
-                toast("❌ 無法啟用通知：未取得瀏覽器通知授權");
-              } else {
-                toast("✅ 成功啟用未完成盤點手機推播！");
-              }
-            }
-          });
-        }
-
         document.querySelector("#backBtn").addEventListener("click", () => {
           state.roomId = null;
           ui.render();
@@ -2929,6 +2789,7 @@ ${dataSummaryContext}
           ui.syncCurrentRoom();
         });
 
+        // 定義登出按鈕事件監聽器，重設驗證 Session 並返回登入 overlay
         document.querySelector("#logoutBtn").addEventListener("click", () => {
           sessionStorage.removeItem("radiology_auth");
           sessionStorage.removeItem("radiology_user");
@@ -2949,18 +2810,17 @@ ${dataSummaryContext}
           toast("已安全登出系統");
         });
 
+        // 定義登入成功後的初始化邏輯
         function startApp() {
           ui.render();
+          // 當平台登入成功或有 Session 時，自動向試算表發起同步請求
           const settings = loadSettings();
           if (settings.apiUrl) {
             ui.syncCurrentRoom();
           }
-
-          setTimeout(() => {
-            checkAndTriggerIncompleteAlert();
-          }, 4500);
         }
 
+        // 醫事人員授權帳號與密碼對照表 (依據 Google 試算表 "代號" 內容)
         const AUTH_USERS = {
           "a": "1398",
           "m": "6034",
@@ -3018,11 +2878,13 @@ ${dataSummaryContext}
           "t": "12041",
         };
 
+        // 登入驗證視窗與 Session 控制 (對比試算表授權清單)
         const loginOverlay = document.querySelector("#loginOverlay");
         const loginForm = document.querySelector("#loginForm");
         const loginError = document.querySelector("#loginError");
         const appContainer = document.querySelector("#app");
 
+        // 綁定登入提交處理器 (無條件綁定，確保登出後仍可再次正常登入)
         loginForm.addEventListener("submit", (e) => {
           e.preventDefault();
           const user = document.querySelector("#username").value.trim();
@@ -3030,7 +2892,7 @@ ${dataSummaryContext}
 
           if (AUTH_USERS[user] && AUTH_USERS[user] === pass) {
             sessionStorage.setItem("radiology_auth", "true");
-            sessionStorage.setItem("radiology_user", user);
+            sessionStorage.setItem("radiology_user", user); // 儲存帳號名稱以利後續同步寫入
             loginOverlay.classList.add("hidden");
             appContainer.classList.remove("hidden");
             startApp();
@@ -3041,6 +2903,7 @@ ${dataSummaryContext}
           }
         });
 
+        // 初始狀態檢測 (使用 classList 切換而非直接 remove 元素，確保登出時能重新渲染)
         if (sessionStorage.getItem("radiology_auth") === "true") {
           loginOverlay.classList.add("hidden");
           appContainer.classList.remove("hidden");
